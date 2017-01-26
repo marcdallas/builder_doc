@@ -1,0 +1,2424 @@
+      *%CSTD==========================================================*
+      * Application. : SAM Arcad Sample application                   *
+      * Component. . : HSR200                        Type: RPG        *
+      *===============================================================*
+      * Sub-system . : TRD   Trade                                    *
+      * Function . . : SAL   Sales                                    *
+      * Sub-function :                                                *
+      *%S=============================================================*
+      * Description of functionalities :                              *
+      *                                                               *
+      *                                                               *
+      *                                                               *
+      *%E=============================================================*
+      * AUTHOR:                           00:00                       *
+      * MODIFS: ** MARY      28/07/2000   12:09 V 1.00.B MR N∞00/0506 *
+      *           CR 00/0122 Sales Order Delivery Details             *
+      *%ECSTD=========================================================*
+      */TITLE Sales Order Entry / Maintenance / Inquiry
+      *
+      * System        : HSV Control & Tracking
+      * Author        : Bob Lee (Intec Systems)
+      * Date          : January 1999
+      *
+      *================================================================
+      * Indicator usage:
+      *  20 - Order Valid for Despatch
+      *  30 - 45 Input fields- DSPATR.
+      *  62 - Control display/non-display of F10-Update.
+      *  75 - 78 Program mode - Dispatch/Entry/Inquiry/Maintenance
+      *  79 - MSGSFL (SFLCLR ETC...).
+      *  99 - General CHAIN/SETLL result.
+      *
+      *================================================================
+      * Maintenance   :
+      * Fix/Chg Ref. Date       Description.
+      * ------------ ---------- -----------------------------------
+      *================================================================
+     H            Y
+     FHSLCUSTBIF  E           K        DISK
+     F            HSFCUST                           KRENAMEHSFCUSTB
+      * Customer Master by Post Code.
+      *
+     FHSLCUSTAIF  E           K        DISK
+      * Customer Master by Customer Account.
+      *
+     F*LTCUSTAIF  E           K        DISK
+     F*           HSFCUST                           KRENAMEALTCUSTF
+      * Customer Master by Customer Account.
+      *
+     FHSLORDPAIF  E           K        DISK
+      * Sales Order Parameters.
+      *
+     FHSLTRACBUF  E           K        DISK
+      * Voucher Tracking by Product/Series/Serial No./Element No.
+      *
+     FHSLEXPAAUF  E           K        DISK                      A    UC
+      * Unbanded Order line file by Product/Series/Serial No.
+      *
+     FHSLVCTLAUF  E           K        DISK
+      * Voucher Control.
+      *
+     FHSLVXRFBIF  E           K        DISK
+      * Agency Product Cross-Reference.
+      *
+     FHSLORDHAUF  E           K        DISK                      A
+      * Sales Order Header.
+      *
+     FHSLORDDBUF  E           K        DISK                      A
+      * Sales Order Detail.
+      *
+     FHSLODELAUF  E           K        DISK                      A
+      * Sales Order Delivery Detail.
+      *
+     FHSLSHPOAIF  E           K        DISK
+      * Ship Only.
+      *
+     FHSLINVMAUF  E           K        DISK
+      * Inventory Master.
+      *
+     FHSLWHSEAIF  E           K        DISK
+      * Warehouse Master.
+      *
+     FHSLCOMPAIF  E           K        DISK
+      * Company Master.
+      *
+     FHSLPRODAIF  E           K        DISK
+      * Product Master.
+      *
+     FHSLDISCAIF  E           K        DISK
+      * Customer Discount File
+      *
+BL   FHSPINVT UF  E           K        DISK                      A
+      * Inventory Transactions.
+      *
+BL   FARTICLE IF  E           K        DISK
+      * FOR ARTCILE XREF
+      *
+     FHSS200  CF  E                    WORKSTN      KINFDS INFDS
+     F                                        RRNX  KSFILE HSS200C
+      * Screen file.
+      *================================================================
+      * Arrays.
+      *
+      * Days in Month for date validation.
+     E                    DIM    12  12  2 0
+      *================================================================
+      * Data Structures.
+      *
+      * Screen Information DS.
+     IINFDS       DS
+     I                                      369 369 KEY
+     I                                    B 370 3710CSRLOC
+      *
+     IXXXSDS     SDS                            429
+     I                                     *PROGRAM XPGMID
+     I                                      244 253 XJOBNO
+     I                                      254 263 XUSRID
+      *
+      * General DDMMCCYY date format.
+     I            DS
+     I I                                      1   20DD
+     I I                                      3   40MM
+     I I                                      5   60CC
+     I I                                      7   80YY
+     I                                        1   80DMCY
+      *
+      * General CCYYMMDD date format.
+     I            DS
+     I I                                      1   20CCC
+     I I                                      3   40YYY
+     I I                                      5   60MMM
+     I I                                      7   80DDD
+     I                                        1   80CYMD
+      *
+      * Input order date format.
+     I            DS
+     I I                                      1   20JDD
+     I I                                      3   40JMM
+     I I                                      5   60JCC
+     I I                                      7   80JYY
+     I                                        1   80XJORDD
+      *
+      * Output order date format.
+     I            DS
+     I I                                      1   20WKC
+     I I                                      3   40WKY
+     I I                                      5   60WKM
+     I I                                      7   80WKD
+     I                                        1   80WKORDD
+      *
+      *----------------------------------------------------------------
+      * Constants.
+      *
+      * Named hexidecimal constants for function keys.
+     I              X'33'                 C         F03
+     I              X'34'                 C         F04
+     I              X'36'                 C         F06
+     I              X'37'                 C         F07
+     I              X'3A'                 C         F10
+     I              X'3B'                 C         F11
+     I              X'3C'                 C         F12
+      *
+      * Zeros to "SETOF" error indicators.
+     I              '0000000000000000000' C         XZEROS
+      *
+      *================================================================
+      * M A I N L I N E
+      *================================================================
+      *
+      * Dispatch mode
+     C           YMODE     IFEQ 'D'
+     C                     MOVEL*ON       *IN75
+     C                     ELSE
+     C                     MOVEL*OFF      *IN75
+     C                     ENDIF
+     C                     READ ARTICLE                  99
+      *
+      * Entry mode
+     C           YMODE     IFEQ 'E'
+     C                     MOVEL*ON       *IN76
+     C                     ELSE
+     C                     MOVEL*OFF      *IN76
+     C                     ENDIF
+      *
+      * Inquiry mode
+     C           YMODE     IFEQ 'I'
+     C                     MOVEL*ON       *IN77
+     C                     ELSE
+     C                     MOVEL*OFF      *IN77
+     C                     ENDIF
+      *
+      * Maintenance mode
+     C           YMODE     IFEQ 'M'
+     C                     MOVEL*ON       *IN78
+     C                     ELSE
+     C                     MOVEL*OFF      *IN78
+     C                     ENDIF
+      *
+      * Program mode
+     C           START     TAG
+     C           YMODE     IFEQ 'I'
+     C           YMODE     OREQ 'D'
+     C           YMODE     OREQ 'M'
+     C           YORDNO    IFNE *BLANKS
+     C                     MOVELYORDNO    XJSORD
+     C                     MOVELYORDNO    WKORDN  80
+     C           WKORDN    CHAINHSLORDHA             99
+     C                     ENDIF
+     C                     ENDIF
+      *
+     C           YMODE     IFEQ 'D'
+     C                     MOVE JTYPE     XJTYPE
+     C                     MOVE JCUST     XJCUST
+     C                     Z-ADDJORDD     WKORDD
+     C                     Z-ADDWKC       JCC
+     C                     Z-ADDWKY       JYY
+     C                     Z-ADDWKM       JMM
+     C                     Z-ADDWKD       JDD
+     C                     MOVE JORDR     XJORDR
+     C                     MOVE JSORD     XJSORD
+     C           JSTAT     IFEQ 'A'
+     C           JSTAT     OREQ ' '
+     C                     MOVE *ON       *IN20
+     C                     ELSE
+     C                     MOVE *OFF      *IN20
+     C                     MOVEL'HSV2015' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C           JCUST     CHAINHSLCUSTA             13
+     C                     MOVE EPCDE     XJPCDE
+     C                     MOVE ENAM1     XENAM1
+     C           JSORD     SETLLHSLORDDB
+     C           JSORD     READEHSLORDDB                 99
+     C           *IN99     DOWEQ*OFF
+     C                     ADD  KQTYN     XVQTY
+     C           JSORD     READEHSLORDDB                 99
+     C                     ENDDO
+     C                     Z-ADDKDISP     XJDISP
+     C                     ELSE
+     C                     EXSR YCLRSC
+     C                     ENDIF
+      *
+      * Dispatch mode.
+XXX  C           YMODE     IFEQ 'D'
+XXX  C           JSORD     CHAINHSLODELA             99
+XXX  C           VNAM1     IFEQ *BLANKS
+XXX  C                     MOVELENAM1     XXNAM1    P
+XXX  C                     MOVELENAM2     XXNAM2    P
+XXX  C                     MOVELEADR1     XXADR1    P
+XXX  C                     MOVELEADR2     XXADR2    P
+XXX  C                     ELSE
+XXX  C                     MOVELVNAM1     XXNAM1    P
+XXX  C                     MOVE *BLANKS   XXNAM2
+XXX  C                     MOVELVADR1     XXADR1    P
+XXX  C                     MOVELVADR2     XXADR2    P
+XXX  C                     ENDIF
+XXX  C                     ENDIF
+      *
+      * Dispatch, or Inquiry, or Maintenance mode.
+XXX  C           YMODE     IFEQ 'I'
+XXX  C           YMODE     OREQ 'D'
+XXX  C           YMODE     OREQ 'M'
+XXX  C                     MOVELYCUST     XJCUST
+XXX  C                     MOVELYTYPE     XJTYPE
+XXX  C                     ENDIF
+     C           HDR       TAG
+XXX  C                     MOVE *OFF      *IN47
+      * Display screen to receive Customer No. until F03/F10
+     C           KEY       DOUEQF03
+     C           KEY       OREQ F10
+     C           XERROR    ANDEQXNO
+      *
+      * Exit if F03 pressed.
+     C           KEY       IFEQ F03
+     C                     MOVE *ON       *INLR
+     C                     LEAVE
+     C                     ENDIF
+      *
+      * Display messages.
+     C                     WRITEMSGCTL
+      *
+     C                     TIME           XXTME
+     C                     EXFMTHSS200A
+      *
+ZZZ  C           XJTYPE    CHAINHSLORDPA             99
+ZZZ  C           MSALE     IFEQ 'C'
+ZZZ  C                     MOVE *ON       *IN30
+ZZZ  C                     MOVE XYES      XERROR
+ZZZ  C                     MOVEL'HSV2027' P0MSID
+ZZZ  C                     EXSR YSNDMG
+ZZZ  C                     ITER
+ZZZ  C                     ENDIF
+      *
+XXX  C                     CLEARXVQTY
+XXX  C           *IN20     IFEQ *OFF
+XXX  C           YMODE     ANDEQ'D'
+XXX  C                     ITER
+XXX  C                     ENDIF
+      *
+BL   C                     Z-ADD1         RCDNBR
+      *
+      * Clear messages.
+     C                     EXSR YCLRMG
+      *
+      * Process the various function keys available on the screen.
+      *
+      * Process Despatch if F07 pressed.
+     C           KEY       IFEQ F07
+      *
+      * Validate that Order Type is a valid Type.
+     C           XJTYPE    CHAINHSLORDPA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN30
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2001' P0MSID
+     C                     EXSR YSNDMG
+     C                     GOTO START
+     C                     ENDIF
+     C                     ENDIF
+      *
+     C           YMODE     IFEQ 'D'
+     C           WKORDN    ANDNEXJSORD
+     C                     MOVELXJSORD    WKORDN  80
+     C           XJSORD    CHAINHSLORDHA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *OFF      *IN20
+     C                     MOVEL'HSV2017' P0MSID
+     C                     EXSR YSNDMG
+     C                     ELSE
+     C                     MOVE JTYPE     XJTYPE
+     C                     MOVE JCUST     XJCUST
+     C                     Z-ADDJORDD     WKORDD
+     C                     Z-ADDWKC       JCC
+     C                     Z-ADDWKY       JYY
+     C                     Z-ADDWKM       JMM
+     C                     Z-ADDWKD       JDD
+     C                     MOVE JORDR     XJORDR
+     C                     MOVE JSORD     XJSORD
+     C           JSTAT     IFEQ 'A'
+     C           JSTAT     OREQ ' '
+     C                     MOVE *ON       *IN20
+     C                     ELSE
+     C                     MOVE *OFF      *IN20
+     C                     MOVEL'HSV2015' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C                     ENDIF
+     C           JCUST     CHAINHSLCUSTA             13
+     C                     MOVE EPCDE     XJPCDE
+     C                     MOVE ENAM1     XENAM1
+     C           JSORD     SETLLHSLORDDB
+     C           JSORD     READEHSLORDDB                 99
+     C           *IN99     DOWEQ*OFF
+     C                     ADD  KQTYN     XVQTY
+     C           JSORD     READEHSLORDDB                 99
+     C                     ENDDO
+     C                     Z-ADDKDISP     XJDISP
+     C                     GOTO HDR
+     C                     ENDIF
+      *
+      * Program in inquiry, dispatch or maintenance mode
+     C           YMODE     IFEQ 'I'
+     C           YMODE     OREQ 'M'
+     C           YMODE     OREQ 'D'
+      *
+      * Initialise subfile
+     C                     MOVEA'1001'    *IN,70
+     C                     WRITEHSS200B
+     C           XJSORD    IFNE 0
+     C                     Z-ADD0         RRNX
+     C           XJSORD    SETLLHSLORDDB
+     C           *IN97     DOUEQ*ON
+     C           XJSORD    READEHSLORDDB                 97
+      *
+      * Build subfile from existing order.
+     C           *IN97     IFEQ *OFF
+     C                     ADD  1         RRNX
+     C           RRNX      CHAINHSS200C              99
+     C                     Z-ADDKLINE     XOLIN
+     C                     MOVELKLTYP     XSELC
+     C                     MOVELKPROD     XKPROD
+     C                     MOVELKDESC     XNDESC
+     C                     MOVELKSERC     XKSERC
+     C                     Z-ADDKSERNF    XKSERF
+     C                     Z-ADDKSERNT    XKSERT
+     C                     Z-ADDKQTYN     XKQTYN
+     C                     Z-ADDKPRIC     XKPRIC
+     C                     Z-ADDKVALU     XKVALU
+XXX  C                     MOVE XKQTYN    XXQTYN
+BL    *
+BL    * Ship Only - set line value to zero.
+BL   C           SHONLY    IFEQ 'Y'
+BL   C           XSELC     ANDEQ'S'
+BL   C                     Z-ADD0         XKVALU
+BL   C                     ENDIF
+BL    *
+BL   C*          £KVALU    MULT MVATP     £KVATA
+      *
+      * Extended value
+     C           XSELC     IFEQ 'S'
+     C           XSELC     OREQ 'N'
+     C           XKPRIC    MULT XKQTYN    XKVALU
+BL    *
+BL    * Ship Only - set line value to zero.
+BL   C           SHONLY    IFEQ 'Y'
+BL   C           XSELC     ANDEQ'S'
+BL   C                     Z-ADD0         XKVALU
+BL   C                     ENDIF
+BL    *
+BL   C*          £KVALU    MULT MVATP     £KVATA
+      *
+     C                     ENDIF
+      *
+      * Write subfile record.
+     C           *IN99     IFEQ *OFF
+     C                     UPDATHSS200C
+     C                     ELSE
+     C                     WRITEHSS200C
+     C                     ENDIF
+     C                     ENDIF
+     C                     ENDDO
+     C                     ENDIF
+     C                     LEAVE
+     C                     ENDIF
+      *
+      * Program mode - Entry
+     C           YMODE     IFEQ 'E'
+      *
+      * Execute search if F04 pressed.
+     C           KEY       IFEQ F04
+     C                     EXSR YSERCH
+XXX  C                     ITER
+XXX  C                     EXSR YCLRMG
+     C                     ENDIF
+      *
+      * Validate header screen fields.
+     C                     EXSR VALIDH
+      *
+      * Validate ship only requirements.
+     C                     EXSR SHPONL
+      *
+     C                     ENDIF
+      *
+      * Process Despatch if F07 pressed.
+RT   C           KEY       IFEQ F07
+      *
+RT   C                     LEAVE
+RT   C                     ENDIF
+      *
+      * End of DO loops for F03/F10 key checks.
+     C                     ENDDO
+     C                     MOVE *OFF      *IN61
+      *
+      * Clear messages.
+     C                     EXSR YCLRMG
+      *
+      * Exit if F03 pressed.
+     C           KEY       IFEQ F03
+      * Exit program.
+     C                     MOVE *ON       *INLR
+     C                     RETRN
+     C                     ENDIF
+      *
+      *-------------------------------------------------------
+      *
+      * Program mode - Entry
+      * Retrieve order number.
+     C           YMODE     IFEQ 'E'
+     C           *NAMVAR   DEFN HSAORDERNOORDERX  80
+     C           *LOCK     IN   ORDERX
+     C                     ADD  1         ORDERX
+     C                     OUT  ORDERX
+     C                     Z-ADDORDERX    XJSORD
+     C                     ENDIF
+      *
+      * Display screen to receive Order Details until F10/F12
+     C           DET       TAG
+      *
+      * Program in inquiry, or dispatch, or maintenance mode
+     C           YMODE     IFEQ 'I'
+     C           YMODE     OREQ 'M'
+     C           YMODE     OREQ 'D'
+     C           KEY       OREQ F12
+     C                     MOVEL*OFF      *IN73
+     C                     ELSE
+     C                     MOVEL*ON       *IN73
+     C                     ENDIF
+      *
+     C           KEY       DOUEQF10
+     C           XERROR    ANDEQXNO
+     C           KEY       OREQ F12
+      *
+      * Display messages.
+     C                     WRITEMSGCTL
+      *
+      * Read subfile to accumulate order value.
+     C           RRNX      IFGT 0
+     C                     Z-ADD1         RRNVAL
+     C                     Z-ADD0         XKTVAL
+     C           *IN98     DOUEQ*ON
+BL   C           RRNVAL    OREQ 100
+BL   C           XSELC     OREQ *BLANK
+     C           RRNVAL    CHAINHSS200C              98
+     C           XSELC     IFNE *BLANK
+     C           XKPROD    ANDNE*BLANK
+     C           *IN98     ANDEQ*OFF
+     C           XSELC     ORNE *BLANK
+     C           XNDESC    ANDNE*BLANK
+     C           *IN98     ANDEQ*OFF
+     C                     ADD  XKVALU    XKTVAL
+     C                     ENDIF
+     C                     ADD  1         RRNVAL
+     C                     ENDDO
+     C                     ENDIF
+      *
+      * Dispatch mode.
+XXX  C           YMODE     IFEQ 'D'
+XXX  C           XJCUST    CHAINHSLCUSTA             99
+XXX   * ...load Customer record into screen 2 fields.
+XXX  C                     MOVELENAM1     XJNAM1           Name 1
+XXX  C                     MOVELENAM2     XJNAM2           Name 2
+XXX  C                     MOVELEADR1     XJADR1           Address 1
+XXX  C                     MOVELEADR2     XJADR2           Address 2
+XXX  C                     ENDIF
+      *
+      *
+      * Display footer.
+RT   C           KEY       IFNE F07
+     C                     WRITEHSS200E
+RT   C                     ENDIF
+      *
+     C                     TIME           XXTME
+     C                     MOVEA'011'     *IN,70
+      *
+RT   C           KEY       IFNE F07
+     C                     EXFMTHSS200B
+XXX  C                     MOVE XNO       XJUMP1
+      *
+     C           KEY       IFNE F10
+     C                     EXSR YDELT
+     C                     ENDIF
+      *
+RT   C                     ENDIF
+      *
+     C                     MOVEL*OFF      *IN73
+     C                     MOVEL*OFF      *IN86
+      *
+OWE   * Clear messages (Only if an error has not been repeated)
+      *
+OWE  C           XERROR    IFEQ XNO
+      * Clear messages.
+     C                     EXSR YCLRMG
+OWE  C                     ENDIF
+      *
+      * Process the various function keys available on the screen.
+      *
+      * Exit if F12 pressed.
+     C           KEY       IFEQ F12
+     C                     GOTO HDR
+     C                     ENDIF
+      *
+      * Execute search if F04 pressed.
+     C           KEY       IFEQ F04
+     C                     EXSR YSERSF
+     C                     ITER
+     C                     ENDIF
+      *
+      * Check for agency cross-references.
+BL   C           MXREF     IFEQ 'Y'
+     C                     EXSR AGXREF
+BL   C                     ENDIF
+      *
+OWE   * Validate order detail screen fields (only re-validate data
+OWE   * if it has been changed. Otherwise re-display error message).
+OWE  C           XERROR    IFEQ XYES
+OWE  C           RRNS      CHAINHSS200C              98
+OWE  C           XSELC     IFNE TSELC
+OWE  C           XKPROD    ORNE TPROD
+OWE  C           XKPRIC    ORNE TPRIC
+OWE  C           XKQTYN    ORNE TQTYN
+OWE  C           XNDESC    ORNE TDESC
+OWE  C                     MOVE *ON       *IN93
+OWE  C                     ENDIF
+OWE  C                     ENDIF
+      *
+OWE  C           *IN93     IFEQ *ON
+     C           XERROR    OREQ XNO
+      *
+      * Validate order detail screen fields.
+     C                     EXSR VALIDD
+OWE  C                     ENDIF
+      *
+      * Discount retrieval.
+     C                     EXSR DISCNT
+      *
+      * Stock allocation preview
+      *                 - with banded allocation and manual allocation.
+BL   C*          MSALE     IFEQ 'S'
+     C*                    EXSR ALLOCS
+BL   C*                    ENDIF
+      *
+      * Process Dispatch if F07 pressed.
+RT   C           KEY       IFEQ F07
+      *
+RT   C                     LEAVE
+RT   C                     ENDIF
+      *
+      * End of DO loops for F10/F12 key checks.
+     C                     ENDDO
+      *
+      *-------------------------------------------------------
+      * Confirm order - prompt for delivery details.
+      *               - file updates when F10 pressed.
+     C           KEY       DOUEQF10
+     C           XERROR    ANDEQXNO
+     C           KEY       OREQ F12
+      *
+      * Clear messages.
+     C                     EXSR YCLRMG
+      *
+      * Process the various function keys available on the screen.
+      *
+      * Exit if F12 pressed.
+OOO  C*          KEY       IFEQ F12
+OOO  C*                    GOTO DET
+OOO  C*                    ENDIF
+      *
+      * Check for minimum order value.
+RT   C           KEY       IFNE F07
+     C           MORDV     IFGT 0
+     C                     EXSR MINVAL
+     C                     ENDIF
+      *
+XXX   * Credit limit check.... Warning only.
+XXX  C           XKTVAL    ADD  XJTYSL    TOT    205
+XXX  C           TOT       IFGT XJCLIM
+XXX  C                     MOVE *ON       *IN46
+XXX  C                     MOVEL'HSV2019' P0MSID
+XXX  C                     EXSR YSNDMG
+XXX  C                     ENDIF
+RT   C                     ENDIF
+      *
+      * Display messages.
+     C                     WRITEMSGCTL
+      *
+      * Display key text footer.
+XXXM C*                    WRITEHSS200E
+RT   C           KEY       IFNE F07
+XXXM C                     WRITEHSS200F
+RT   C                     ENDIF
+      *
+      * Delivery address prompt screen.
+     C                     TIME           XXTME
+      *
+      * Program in inquiry, dispatch or maintenance mode
+     C           YMODE     IFEQ 'I'
+     C           YMODE     OREQ 'M'
+     C           YMODE     OREQ 'D'
+     C           WKORDN    CHAINHSLODELA             99
+      *
+      * Write fields for order delivery detail record.
+     C           *IN99     IFEQ *OFF
+     C                     MOVELVNAM1     XVNAM1
+     C                     MOVELVADR1     XVADR1
+     C                     MOVELVADR2     XVADR2
+     C                     MOVELVADR3     XVADR3
+     C                     MOVELVPCDE     XVPCDE
+     C                     MOVELVDIN1     XVDIN1
+     C                     MOVELVDIN2     XVDIN2
+     C                     MOVELVDIN3     XVDIN3
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * Write order delivery details record.
+RT   C           KEY       IFNE F07
+     C                     EXFMTHSS200D
+RT   C                     ENDIF
+      *
+OWE   * Exit if F12 pressed.
+OWE  C           KEY       IFEQ F12
+     C                     EXSR YDELT
+OWE  C                     GOTO DET
+OWE  C                     ENDIF
+      *
+      * Clear messages.
+XXX  C           *IN47     IFEQ *OFF
+     C                     EXSR YCLRMG
+XXX  C                     ENDIF
+      *
+      * Update all files, if no errors exist.
+     C           KEY       IFEQ F10
+     C           XERROR    ANDEQXNO
+RT   C           KEY       OREQ F07
+     C                     Z-ADD1         RRNX
+     C           *IN98     DOUEQ*ON
+BL   C           RRNX      OREQ 100
+BL   C           XSELC     OREQ *BLANK
+     C           RRNX      CHAINHSS200C              98
+     C           XSELC     IFNE *BLANK
+     C           XKPROD    ANDNE*BLANK
+     C           *IN98     ANDEQ*OFF
+     C           XSELC     ORNE *BLANK
+     C           XNDESC    ANDNE*BLANK
+     C           *IN98     ANDEQ*OFF
+      *
+      * Save RRN for current order line.
+     C                     Z-ADDRRNX      RRNLIN
+      *
+OWE   * Update Voucher Control if in entry mode....
+OWE  C           YMODE     IFEQ 'E'
+BL   C           MSALE     ANDEQ'S'
+OWE  C                     EXSR UPPVCT
+OWE  C                     ENDIF
+      *
+      * Re-position to required subfile line
+     C                     Z-ADDRRNLIN    RRNX
+     C           RRNX      CHAINHSS200C              98
+      *
+BL    * Create/Update order details if in Entry,Maint,or Dispatch mode.
+BL   C           YMODE     IFEQ 'E'
+BL   C           YMODE     OREQ 'D'
+BL   C           YMODE     OREQ 'M'
+     C                     EXSR UPORDD
+BL   C                     ENDIF
+      *
+BL    * Update voucher tracking if in Entry or Dispatch mode.
+BL    * Stock lines only.
+     C           YMODE     IFEQ 'E'
+     C           XSELC     ANDEQ'S'
+BL   C           YMODE     OREQ 'D'
+BL   C           XSELC     ANDEQ'S'
+     C                     EXSR UPTRAC
+BL   C                     ENDIF
+      *
+BL    * Allocate inventory if in Entry mode.
+BL    * Stock lines only.
+BL   C           YMODE     IFEQ 'E'
+BL   C           XSELC     ANDEQ'S'
+      * Update inventory allocations.
+     C                     EXSR UPINVA
+     C                     ENDIF
+      *
+BL    * Sell inventory if in Dispatch mode.
+BL    * Stock lines only.
+BL   C           YMODE     IFEQ 'D'
+BL   C           XSELC     ANDEQ'S'
+      * Update inventory sales.
+BL   C                     EXSR UPINVS
+      *
+      * Create inventory sales transaction.
+     C                     EXSR UPINVT
+     C                     ENDIF
+     C                     ENDIF
+     C                     ADD  1         RRNX
+     C                     ENDDO
+      *
+BL    * Create/Update order header if in Entry,Maint,or Dispatch mode.
+BL   C           YMODE     IFEQ 'E'
+BL   C           YMODE     OREQ 'D'
+BL   C           YMODE     OREQ 'M'
+     C                     EXSR UPORDH
+      *
+      * Create/update delivery record if in Entry,Maint or Dispat.mode.
+     C                     EXSR UPODEL
+BL   C                     ENDIF
+      *
+BL    * Ship to all delivery points if in Entry mode.
+BL   C           YMODE     IFEQ 'E'
+BL   C           MALLP     ANDEQ'Y'
+     C                     EXSR SHPALL
+BL   C                     ENDIF
+      *
+BL    * Print delivery note if in Entry mode, and charges only not set.
+BL   C           YMODE     IFEQ 'E'
+BL   C           MINVC     ANDNE'Y'
+     C                     EXSR PRTDEL
+BL   C                     ENDIF
+      *
+BL    * Print Invoice if in Entry mode, and Immediate print required.
+BL   C           YMODE     IFEQ 'E'
+BL   C           MINVP     ANDEQ'I'
+     C                     EXSR PRTINV
+BL   C                     ENDIF
+      *
+     C                     ENDIF
+      * Process Despatch if F07 pressed.
+RT   C           KEY       IFEQ F07
+     C                     EXSR YCLRSC
+      *
+RT   C                     LEAVE
+RT   C                     ENDIF
+      *
+      * End of Confirmation.
+     C                     ENDDO
+      *
+      * Return to order details if F12 pressed.
+     C           KEY       IFEQ F12
+     C                     GOTO DET
+     C                     ENDIF
+      *
+      * Clear Subfile
+     C                     MOVEA'1000'    *IN,70
+     C                     WRITEHSS200B
+      *
+      * Clear contents of HSPEXPA.
+     C                     EXSR YDELT
+      *
+      * Return to order header.
+     C                     GOTO HDR
+      *
+      *****************************************************************
+      *----------------------------------------------------------------
+      * ‡CLRSC - Clear screen fields.
+      *----------------------------------------------------------------
+      *
+     C           YCLRSC    BEGSR
+      *
+BL    * Clear header screen fields.
+BL   C           YMODE     IFNE 'E'
+     C                     CLEARXJTYPE
+BL   C                     ENDIF
+BL   C           YMODE     IFEQ 'D'
+     C                     CLEARXJSORD
+     C                     CLEARXENAM1
+     C                     CLEARXVQTY
+BL   C                     ENDIF
+     C                     CLEARXJCOMP
+     C                     CLEARXJWHSE
+     C                     CLEARXJPCDE
+     C                     CLEARXJCUST
+     C                     CLEARXJDISP
+     C                     CLEARXJORDD
+     C                     CLEARXJORDR
+      *
+BL    * Clear delivery screen fields.
+BL   C                     CLEARXVNAM1
+BL   C                     CLEARXVADR1
+BL   C                     CLEARXVADR2
+BL   C                     CLEARXVADR3
+BL   C                     CLEARXVPCDE
+BL   C                     CLEARXVDIN1
+BL   C                     CLEARXVDIN2
+BL   C                     CLEARXVDIN3
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * SHPONL - Validate ship only requirements.
+      *----------------------------------------------------------------
+     C           SHPONL    BEGSR
+      *
+      * Check if a ship only record exists for this customer
+     C           XJCUST    CHAINHSLSHPOA             99
+     C           *IN99     IFEQ *OFF
+     C                     MOVEL'Y'       SHONLY  1
+BL   C                     ELSE
+BL   C                     MOVEL' '       SHONLY
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * AGXREF - Check for agency cross-references.
+      *----------------------------------------------------------------
+     C           AGXREF    BEGSR
+     C           KEYXRF    CHAINHSLVXRFB             99
+     C           *IN99     IFEQ *OFF
+     C                     MOVELHPROD     KPROD
+     C                     MOVELHPROD     XKPROD
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * VALIDD - Validate order detail screen fields.
+      *----------------------------------------------------------------
+     C           VALIDD    BEGSR
+      *
+      * Order Detail validation:
+      *
+      * Reset work values.
+     C*                    Z-ADD0         RRN£
+OWEM C                     Z-ADD0         RRNS    50
+OWE  C                     Z-ADD1         RRNT    50
+     C                     RESETXERROR
+     C                     MOVE *OFF      *IN61            Hide F10/F11
+      *
+      * Reset error indicators.
+     C                     MOVEAXZEROS    *IN,30
+      *
+      * Read all Records from subfile and validate contents.
+     C           *IN99     DOUEQ*ON                        ..Do1
+OWE   *
+OWE   * Process the subfile in one of two modes depending on whether
+OWE   * a previous change to the subfile has been made....
+OWE   *
+OWE  C           *IN82     IFEQ *OFF
+OWE  C                     READCHSS200C                  99
+OWE  C                     Z-ADDRRNX      RRNT
+OWE  C                     ADD  1         RRNT
+OWE  C                     ELSE
+OWE  C           RRNT      IFEQ 101
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+OWE  C           RRNT      CHAINHSS200C              99
+OWE  C                     ADD  1         RRNT
+OWE  C                     ENDIF
+      *
+     C*                    READCHSS200C                  99
+      * Retrieve subfile record.
+     C           *IN99     IFEQ *OFF                       ...If2
+OWE  C                     MOVE XKPROD    TPROD1 13
+OWE  C                     MOVE XKQTYN    TQTYN1 150
+OWE  C                     MOVE *ON       *IN82
+      *
+      * Reset subfile error indicators.
+     C                     MOVEA'00000000'*IN,36
+      *
+     C           XSELC     IFNE *BLANK                     ....If3
+     C           XKPROD    ORNE *BLANK                     ....If3
+     C           XNDESC    ORNE *BLANK                     ....If3
+     C           XKPRIC    ORNE *ZEROS                     ....If3
+     C           XKQTYN    ORNE *ZEROS                     ....If3
+     C           XKVALU    ORNE *ZEROS                     ....If3
+     C           XKVATA    ORNE *ZEROS                     ....If3
+     C           XKSERC    ORNE *BLANKS                    ....If3
+     C           XKSERF    ORNE *ZEROS                     ....If3
+     C           XKSERT    ORNE *ZEROS                     ....If3
+      *
+      * Count active subfile records.
+OWE  C*                    ADD  1         RRN£
+OWE  C                     ADD  1         RRNS
+      *
+      * Validate Selection code.
+     C           XSELC     IFNE 'S'
+     C           XSELC     ANDNE'N'
+     C           XSELC     ANDNE'T'
+      *
+      * Validate Selection code / Product code / Text combination
+     C           XSELC     OREQ *BLANK
+     C           XKPROD    ANDNE*BLANKS
+     C           XSELC     OREQ *BLANK
+     C           XNDESC    ANDNE*BLANKS
+     C           XSELC     OREQ *BLANK
+     C           XKPRIC    ANDNE0
+     C           XSELC     OREQ *BLANK
+     C           XKQTYN    ANDNE0
+     C           XSELC     OREQ 'T'
+     C           XKPROD    ANDNE*BLANKS
+     C           XSELC     OREQ 'T'
+     C           XKPRIC    ANDNE0
+     C           XSELC     OREQ 'T'
+     C           XKQTYN    ANDNE0
+     C           XSELC     OREQ 'T'
+     C           XKSERC    ANDNE*BLANKS
+     C           XSELC     OREQ 'T'
+     C           XKSERF    ANDNE0
+     C           XSELC     OREQ 'T'
+     C           XKSERT    ANDNE0
+     C           XSELC     OREQ 'S'
+     C           XKQTYN    ANDEQ0
+     C*          £SELC     OREQ 'S'
+     C*          £KPRIC    ANDEQ0
+     C           XSELC     OREQ 'N'
+     C           XKQTYN    ANDEQ0
+     C           XSELC     OREQ 'N'
+     C           XKPRIC    ANDEQ0
+     C                     MOVE *ON       *IN36
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2006' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * Validate Selection code for Invoice Charge Only order type.
+     C           XSELC     IFEQ 'S'
+     C           MINVC     ANDEQ'Y'
+     C                     MOVE *ON       *IN36
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2014' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+XXX  C           YMODE     IFEQ 'D'
+XXX  C           XKQTYN    ANDGTXXQTYN
+XXX  C                     MOVE XYES      XERROR
+XXX  C                     MOVEL'HSV2020' P0MSID
+XXX  C                     EXSR YSNDMG
+XXX  C                     LEAVE
+XXX  C                     ELSE
+XXX  C                     EXSR YCLRMG
+XXX  C                     ENDIF
+      *
+      * Validate Product.
+     C           XSELC     IFEQ 'S'
+     C           XKPROD    IFNE *BLANKS
+     C           XKPROD    CHAINHSLPRODA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN37
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2007' P0MSID
+     C                     EXSR YSNDMG
+     C                     ELSE
+     C                     MOVELNDESC     XNDESC
+     C                     Z-ADDNPRIC     XKPRIC
+     C                     ENDIF
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * Reverse price for Credit
+     C           MSALE     IFEQ 'C'
+     C                     Z-SUBXKPRIC    XKPRIC
+     C                     ENDIF
+      *
+      * Extended value
+     C           XSELC     IFEQ 'S'
+     C           XSELC     OREQ 'N'
+     C           XKPRIC    MULT XKQTYN    XKVALU
+BL    *
+BL   C*          £KVALU    MULT MVATP     £KVATA
+     C                     ENDIF
+      *
+OWE   * Save Price, Value and Description field contents....
+OWE  C                     MOVE XKPRIC    TKPRIC  92P
+OWE  C                     MOVE XKVALU    TKVALU  92P
+OWE  C                     MOVE XNDESC    TNDESC 19 P
+      *
+      * Check quantity against allocated serial numbers.
+OOO  C*          £KQTYN    IFNE 0
+OOO  C*          £KSERF    ANDNE0
+OOO  C*          £KSERT    ANDNE0
+OOO  C*          £KSERT    SUB  £KSERF    WKQTYN
+OOO  C*                    ADD  1         WKQTYN
+OOO  C*          £KQTYN    IFNE WKQTYN
+OOO  C*                    MOVEA'1011'    *IN,40
+OOO  C*                    MOVE £YES      £ERROR
+OOO  C*                    MOVEL'HSV2013' P0MSID
+OOO  C*                    EXSR ‡SNDMG
+OOO  C*                    ENDIF
+OOO  C*                    ENDIF
+      *
+      * Check voucher control if not yet allocated
+     C           XSELC     IFEQ 'S'
+     C           XKQTYN    ANDGT0
+OOO  C*          £KSERC    IFEQ *BLANKS
+OOO  C*          £KSERF    ANDEQ0
+OOO  C*          £KSERT    ANDEQ0
+     C                     MOVEL'U'       WKVCTL
+     C                     EXSR UPVCTL
+     C                     ENDIF
+OOO  C*                    ENDIF
+      *
+      * Update subfile record with DSPATR settings and set SFLRCDNBR.
+     C                     Z-ADDRRNX      RCDNBR
+OWE  C                     MOVE TKPRIC    XKPRIC
+OWE  C                     MOVE TKVALU    XKVALU
+OWE  C                     MOVE TNDESC    XNDESC
+     C                     UPDATHSS200C                    SFL
+     C                     MOVEA'00000000'*IN,36
+      *
+      * If errors encountered in subfile then exit subfile validation.
+     C           XERROR    IFEQ XYES
+OWE  C                     MOVELXSELC     TSELC   1 P
+OWE  C                     MOVELXKPROD    TPROD  13 P
+OWE  C                     MOVELXKPRIC    TPRIC   92P
+OWE  C                     MOVELXKQTYN    TQTYN   90P
+OWE  C                     MOVELXNDESC    TDESC  19 P
+OOO  C*                    Z-ADDRRN£      RRNS    50
+     C                     LEAVE
+     C                     ENDIF
+      *
+      * End of non-blank subfile check.
+     C                     ENDIF                           ....EndIf3
+      *
+      * End of Subfile CHAIN check.
+     C                     ENDIF                           ...EndIf2
+      *
+      * End of loop for next subfile record.
+     C                     ENDDO                           ..EndDo1
+      *
+      * Save last RRN number used.
+BL   C*                    Z-ADDRRN£      SAVRRN
+      *
+      * If no errors found...
+     C           XERROR    IFEQ XNO
+      * ...display "Data valid.Press F10 to update" message...
+     C                     MOVEL'HSV9006' P0MSID
+     C                     EXSR YSNDMG
+      * ...activate F10 key (*IN61=*ON).
+     C                     MOVE *ON       *IN61
+     C                     ENDIF
+XXX  C           XJUMP1    IFEQ XYES
+XXX  C           *IN52     ANDEQ*ON
+     C                     CALL 'HSR342'
+     C                     ENDIF
+XXX  C                     MOVE *OFF      *IN52
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * DISCNT - Discount retrieval.
+      *----------------------------------------------------------------
+      *
+     C           DISCNT    BEGSR
+      *
+      * If customer discount is not entered on header screen either
+      * caluclate from HSPDISC file keyed on Order Value or default
+      * according to Customer Type.
+      *
+     C           XJDISP    IFEQ 0
+      *
+      * Setup key list for HSPDISC
+      *
+     C                     Z-ADDXKTVAL    PFAMT
+      *
+      * SETLL on HSLDISCA
+      *
+     C           DSCKEY    SETLLHSLDISCA                 99
+      *
+      * If record not found READP
+      *
+     C           *IN99     IFEQ *OFF
+     C                     READPHSLDISCA                 99
+      *
+      * If not BOF
+      *
+     C           *IN99     IFEQ *OFF
+BL   C           PCTYP     ANDEQECTYP
+     C                     Z-ADDPDISC     KDISP
+      *
+      * Else calculate discount according to Customer Type
+      *
+     C                     ELSE
+      *
+     C                     SELEC
+      *
+      * If Customer Type is '001' - Z-ADD 10 to discount
+      *
+     C           ECTYP     WHEQ '001'
+     C                     Z-ADD10        KDISP
+      *
+      * If Customer Type is '002' - Z-ADD 20 to discount
+      *
+     C           ECTYP     WHEQ '002'
+     C                     Z-ADD20        KDISP
+      *
+     C                     ENDSL
+      *
+     C                     ENDIF
+      *
+      * Record found on SETLL
+      *
+     C                     ELSE
+      *
+     C                     Z-ADDPDISC     KDISP
+      *
+     C                     ENDIF
+      *
+      * £JDISP not equal to 0
+      *
+     C                     ELSE
+     C                     Z-ADDXJDISP    KDISP
+      *
+     C                     ENDIF
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Check for minimum order value.
+      *----------------------------------------------------------------
+     C           MINVAL    BEGSR
+     C                     Z-ADD0         WKTOTV
+     C                     Z-ADD1         RRNP
+      *
+      * Accumulate order total value
+     C           *IN99     DOUEQ*ON
+BL   C           RRNP      OREQ 100
+BL   C           XSELC     OREQ *BLANK
+     C           RRNP      CHAINHSS200C              99
+     C           *IN99     IFEQ *OFF
+     C                     ADD  XKVALU    WKTOTV
+     C                     ENDIF
+     C                     ADD  1         RRNP
+     C                     ENDDO
+      *
+      * Compare order total value and minimum order value
+     C           WKTOTV    IFLT MORDV
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2011' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C                     Z-ADD1         RRNP
+     C                     Z-ADD1         RRNX
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Ship to all delivery points.
+      *----------------------------------------------------------------
+     C           SHPALL    BEGSR
+     C*
+     C* SETLL on HSLCUSTA with Customer Number
+     C*
+     C           XJCUST    SETLLHSLCUSTA
+     C*
+     C* READE on HSLCUSTA with Customer Number
+     C*
+     C           XJCUST    READEHSLCUSTA                 99
+     C*
+     C* If not EOF
+     C*
+     C           *IN99     DOWEQ*OFF
+     C*
+     C* If ECGRP not equal to blanks
+     C*
+     C           ECGRP     IFNE *BLANKS
+     C*
+     C* CHAIN to Customer File for Delivery Name and Address
+     C*
+     C*          ECGRP     CHAINALTCUSTF             13
+     C*
+     C*          *IN13     IFEQ *OFF
+     C*
+     C* Write Order Header Record
+     C*
+     C                     EXSR UPORDH
+     C*
+     C* Set up Delivery Name and Address
+     C*
+     C                     MOVELENAM1     XVNAM1
+     C                     MOVELEADR1     XVADR1
+     C                     MOVELEADR2     XVADR2
+     C                     MOVELEADR3     XVADR3
+     C                     MOVELEPCDE     XVPCDE
+     C*
+     C* Write Order Delivery Record
+     C*
+     C                     EXSR UPODEL
+     C*
+     C* Write Order Detail Record
+     C*
+     C                     EXSR UPORDD
+     C*
+     C* ECGRP equal to blanks
+     C*
+     C*                    ENDIF
+     C*
+     C* Customer Record not found
+     C*
+     C                     ENDIF
+     C*
+     C* Increment order number
+     C*
+     C           *LOCK     IN   ORDERX
+     C                     ADD  1         ORDERX
+     C                     OUT  ORDERX
+     C                     Z-ADDORDERX    XJSORD
+     C*
+     C* READE on HSLCUSTA with Customer Number
+     C*
+     C           XJCUST    READEHSLCUSTA                 99
+     C*
+     C                     ENDDO
+     C*
+     C* EOF on HSLCUSTA
+     C*
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Update voucher control.
+      *----------------------------------------------------------------
+     C           UPVCTL    BEGSR
+      *
+     C                     MOVE *ON       *IN85
+      * Save order line values
+      *
+     C                     Z-ADD0         XQUAN   90
+     C                     MOVE XNO       XJUMP   1
+      * Clear flag for successful range allocation.
+     C                     MOVEL*BLANK    WKRANG
+      *
+      * Clear flag for first tracking record found.
+     C                     MOVELXNO       XFIRST  1
+      *
+      * Get Serial number range.
+     C                     MOVEL*BLANKS   WKSERC
+     C           *IN92     DOUEQ*ON
+     C           WKRANG    OREQ 'Y'
+      *
+OWE   * Work back through the subfile checking for duplicate
+OWE   * product codes.... If found validate data under DOUB subroutine.
+      *
+OWE  C                     MOVE RRNX      RRNXX   50
+OWE  C           RRNX      DOUEQ0
+OWE  C                     SUB  1         RRNX
+OWE  C           RRNX      IFEQ 0
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+OWE  C           RRNX      CHAINHSS200C              90
+OWE  C           XKPROD    IFEQ TPROD1
+OWE  C                     MOVE RRNXX     RRNX
+OWE  C                     EXSR DOUB
+OWE  C                     MOVE *ON       *IN81
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+OWE  C                     ENDDO
+      *
+OWE   * Reset subfile position.....
+OWE  C                     MOVE RRNXX     RRNX
+OWE  C           RRNX      CHAINHSS200C              90
+      *
+      * Exit from subroutine if DOUB sr has been processed....
+      *
+OWE  C           *IN81     IFEQ *ON
+OWE  C                     MOVE XKSERF    XKSERF
+OWE  C                     MOVE XKSERC    XKSERC
+OWE  C                     MOVE XKSERT    XKSERT
+OWE  C                     MOVE *OFF      *IN81
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+      *
+     C           VCHKEY    SETLLHSLVCTLA
+     C           XKPROD    READEHSLVCTLA                 92
+      *
+      * Move pointer file values into temporary fields....
+      *
+     C                     MOVE BPROD     OPROD  13
+     C                     MOVE BSERCC    OSERC   3
+     C                     MOVE BSERNN    OSERN   90
+     C                     Z-ADDBSERNN    WKSERN
+     C                     MOVE BSERCC    WKSERC
+     C                     Z-ADDBSERNN    XXSERF  90
+     C********             SUB  1         ££SERF
+      *
+      *
+     C           *IN92     IFEQ *OFF
+      *
+      * Scan voucher tracking file for first available voucher....
+      *
+     C                     MOVE BSERCC    XKSERC
+     C                     MOVE OSERN     XKSERF
+      *
+     C           *IN94     DOUEQ*ON
+     C           XQUAN     OREQ XKQTYN
+      *
+     C           *IN85     IFEQ *ON
+     C           TRCKEY    SETLLHSLTRACB
+     C                     MOVE *OFF      *IN85
+     C                     ENDIF
+      *
+     C           XKPROD    READEHSLTRACB                 94
+      *
+     C           *IN94     IFEQ *ON
+     C                     LEAVE
+     C                     ENDIF
+      *
+     C           ASERC     IFNE WKSERC
+     C           ASERN     ORNE WKSERN
+     C           AALLD     ORNE *ZEROS
+     C                     ADD  1         DSERN
+      *
+     C           *IN87     IFEQ *OFF
+     C           XXSERN    ADD  1         XXRES   90
+PPP  C*          XXRES     IFNE ASERN
+PPP  C*                    MOVE ASERN     ££SERF
+PPP  C*                    ELSE
+     C                     MOVE ASERN     XXSERF
+     C                     ADD  1         XXSERF
+     C                     ADD  1         WKSERN
+RRR  C                     MOVE *ON       *IN85
+RRR  C                     ADD  1         XKSERF
+PPP  C*                    ENDIF
+     C                     ELSE
+      *
+      * No previous error so add to HSPEXPA.....
+     C                     MOVE WKSERC    XXSERC  3 P
+     C                     MOVE WKSERN    XXSERN  90P
+     C                     SUB  1         WKSERN
+     C                     MOVE XYES      XJUMP
+XXX  C                     MOVE XYES      XJUMP1  1
+      *
+     C****       *IN87     IFEQ *ON
+     C                     MOVE XXSERF    USERNS
+     C                     MOVE WKSERN    USERNE
+     C                     MOVE WKSERC    USERCC
+     C                     MOVE XKPROD    UPROD
+     C                     OPEN HSLEXPAA
+     C                     WRITEHSFEXPA
+     C                     CLOSEHSLEXPAA
+     C*****                ENDIF
+      *
+     C                     MOVE ASERN     XXSERF
+     C                     ADD  1         DSERN
+     C           DSERN     IFNE ASERN
+     C           ASERN     SUB  DSERN     DIF     90
+     C                     ADD  DIF       XXSERF
+     C                     ENDIF
+      *
+     C                     ADD  1         XKSERF
+     C                     ADD  2         WKSERN
+     C                     MOVE *ON       *IN85
+     C                     MOVE *OFF      *IN87
+      *
+XXX  C           ASERC     IFNE WKSERC
+XXX  C                     MOVE ASERC     WKSERC
+XXX  C                     MOVE ASERN     WKSERN
+XXX  C                     MOVE WKSERC    XKSERC
+XXX  C                     MOVE WKSERN    XKSERF
+XXX  C                     MOVE WKSERN    XXSERF
+XXX  C                     MOVE *ON       *IN85
+XXX  C                     ENDIF
+      *
+     C                     ITER
+     C                     ENDIF
+      *
+     C           ASERC     IFNE WKSERC
+     C                     MOVE ASERC     WKSERC
+     C                     MOVE ASERN     WKSERN
+     C                     MOVE WKSERC    XKSERC
+XXX  C                     MOVE WKSERN    XKSERF
+XXX  C                     MOVE WKSERN    XXSERF
+     C                     MOVE *ON       *IN85
+     C                     ENDIF
+      *
+     C                     ENDIF
+      *
+      *
+     C           AALLD     IFEQ *ZEROS
+     C***        *IN87     IFEQ *OFF
+     C***                  ADD  1         ££SERF
+     C***                  ENDIF
+     C                     MOVE *ON       *IN87
+     C                     ADD  1         XQUAN
+     C                     MOVE XYES      XFIRST
+     C                     MOVE ASERC     WKSERC
+     C                     MOVE ASERN     DSERN   90P
+     C                     ADD  1         WKSERN
+     C                     ADD  1         XKSERF
+     C                     MOVE *ON       *IN85
+     C                     ITER
+     C                     ELSE
+     C                     ITER
+     C                     ENDIF
+      *
+     C                     ENDDO
+      *
+     C           XFIRST    IFEQ XNO
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2024' P0MSID
+     C                     EXSR YSNDMG
+     C                     CLEARXKSERC
+     C                     CLEARXKSERT
+     C                     CLEARXKSERF
+     C                     LEAVE
+     C                     ENDIF
+      *
+     C           XQUAN     IFNE XKQTYN
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2025' P0MSID
+     C                     EXSR YSNDMG
+     C                     CLEARXKSERC
+     C                     CLEARXKSERT
+     C                     CLEARXKSERF
+     C*****                MOVE *ON       *IN52
+     C                     LEAVE
+     C                     ENDIF
+      *
+     C                     MOVE *ON       *IN52
+      *
+     C           XJUMP     IFEQ XYES
+     C***                  MOVE £YES      £ERROR
+     C                     MOVEL'HSV2026' P0MSID
+     C                     EXSR YSNDMG
+      *
+     C                     SUB  1         WKSERN
+XXX  C                     MOVEL'Y'       WKRANG
+      *
+     C*****                MOVE XXSERC    £KSERC
+     C*****                MOVE XXSERN    £KSERF
+     C*****      TRCKEY    CHAINHSLTRACB             99
+     C*****      *IN99     IFEQ *OFF
+     C*****                ADD  1         ££SERF
+     C*****                ENDIF
+      *
+     C                     MOVE XXSERF    USERNS
+     C                     MOVE WKSERN    USERNE
+     C                     MOVE WKSERC    USERCC
+     C                     OPEN HSLEXPAA
+     C                     WRITEHSFEXPA
+     C                     CLOSEHSLEXPAA
+      *
+     C                     CLEARXKSERC
+     C                     CLEARXKSERT
+     C                     CLEARXKSERF
+     C                     EXSR YJUMP
+     C                     MOVE *ON       *IN86
+     C                     MOVE *ON       *IN61
+     C                     LEAVE
+     C                     ENDIF
+      *
+      * Series code found.
+     C                     MOVE BSERCC    XKSERC
+      *
+     C                     Z-ADDOSERN     XKSERF
+     C                     SUB  1         WKSERN
+     C                     Z-ADDWKSERN    XKSERT
+      *
+      * Flag successful range allocation.
+     C                     MOVEL'Y'       WKRANG
+      *
+      * Update if required.
+     C                     ENDIF
+     C                     ENDDO
+      *
+      * Unsuccessful range allocation.
+     C           WKRANG    IFNE 'Y'
+     C                     MOVEA'111'     *IN,41
+XXX  C****                 MOVE £YES      £ERROR
+     C                     MOVEL'HSV2012' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Display contents of HSLEXPAA
+      *----------------------------------------------------------------
+      *
+     C           YJUMP     BEGSR
+     C                     ENDSR
+      *
+      *
+      *----------------------------------------------------------------
+      * Delete contents of HSLEXPAA
+      *----------------------------------------------------------------
+      *
+     C           YDELT     BEGSR
+     C                     CALL 'HSC200A'
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Repeat of Product Code in a single order
+      *----------------------------------------------------------------
+      *
+OWE  C           DOUB      BEGSR
+      *
+      * Get Serial number range.
+OWE  C                     MOVEL*BLANKS   WKSERC
+OWE  C           *IN92     DOUEQ*ON
+OWE  C           WKRANG    OREQ 'Y'
+      *
+OWE  C           VCHKEY    SETLLHSLVCTLA
+OWE  C           XKPROD    READEHSLVCTLA                 92
+OWE  C           *IN92     IFEQ *OFF
+      *
+      * Get available series code.
+OWEM C           BSERNN    ADD  TQTYN1    XXSERN  90
+OWE  C*          ££SERN    IFGT BSERNE
+OWE  C*                    MOVELBSERCN    WKSERC
+OWE  C                     ITER
+OWE  C                     ELSE
+      *
+      * Work back through the subfile searching for duplicate
+      * product code/series code combination records......
+      *
+OWE  C                     MOVE RRNX      RRNXX   50P
+OWE  C           RRNX      DOUEQ0
+OWE  C                     SUB  1         RRNX
+OWE  C           RRNX      IFEQ 0
+OWE  C                     MOVE *ON       *IN83
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+OWE  C           RRNX      CHAINHSS200C              90
+OWE  C           XKSERC    IFEQ BSERCC
+OWE  C           XKSERT    ADD  TQTYN1    RES     90
+OWE  C*          RES       IFLE BSERNE
+OWE  C                     MOVE XKSERC    KKSERC  3 P
+OWE  C                     MOVE XKSERT    KKSERT  90P
+OWE  C                     LEAVE
+OWE  C                     ELSE
+OWE  C                     MOVE *ON       *IN84
+OWE  C                     LEAVE
+OWE  C                     ENDIF
+OWE  C*                    ENDIF
+OWE  C                     ENDDO
+      *
+      * Reset the subfile pointer position.....
+OWE  C                     MOVE RRNXX     RRNX      P
+OWE  C           RRNX      CHAINHSS200C              90
+      *
+OWE  C           *IN84     IFEQ *OFF
+OWE  C           *IN83     ANDEQ*OFF
+OWE   * Series code found.
+OWE  C                     MOVE KKSERC    XKSERC  3 P
+OWE   *
+OWE   * Set To serial number for the order.
+OWE  C                     MOVE RES       XKSERT  90P
+OWE   *
+OWE   * Set From Serial Number for the order.
+OWE  C           KKSERT    ADD  1         XKSERF  90
+OWE   *
+OWE   * Set Next Serial Number for the voucher control.
+OWE  C                     ADD  TQTYN1    BSERNN
+OWE   *
+OWE   * Flag successful range allocation.
+OWE  C                     MOVEL'Y'       WKRANG
+OWE  C                     ITER
+OWE  C                     ENDIF
+      *
+OWE  C           *IN83     IFEQ *ON
+OWE  C           *IN84     ANDEQ*OFF
+OWE  C                     MOVE *OFF      *IN83
+      *
+OWE   * Series code found.
+OWE  C                     MOVE BSERCC    XKSERC  3
+OWE   *
+OWE   * Set To serial number for the order.
+OWE  C           BSERNN    ADD  TQTYN1    XKSERT  90
+OWE  C                     SUB  1         XKSERT
+OWE   *
+OWE   * Set From Serial Number for the order.
+OWE  C                     Z-ADDBSERNN    XKSERF
+OWE   *
+OWE   * Set Next Serial Number for the voucher control.
+OWE  C                     ADD  TQTYN1    BSERNN
+OWE   *
+OWE   * Flag successful range allocation.
+OWE  C                     MOVEL'Y'       WKRANG
+OWE  C                     ITER
+OWE  C                     ENDIF
+OWE  C                     MOVE *OFF      *IN84
+OWE  C*                    MOVELBSERCN    WKSERC
+      *
+OWE  C*                    ENDIF
+OWE  C                     ENDIF
+OWE  C                     ENDDO
+OWE  C                     ENDSR
+      *----------------------------------------------------------------
+      * Update voucher tracking.
+      *----------------------------------------------------------------
+     C           UPTRAC    BEGSR
+      *
+      * Reverse order date before update.
+BL   C           YMODE     IFEQ 'E'
+     C                     Z-ADDJDD       WKD
+     C                     Z-ADDJMM       WKM
+     C                     Z-ADDJCC       WKC
+     C                     Z-ADDJYY       WKY
+     C                     Z-ADDWKORDD    ADFIS
+BL   C                     ENDIF
+      *
+      * Locate voucher record.
+     C           TRCKEY    SETLLHSLTRACB
+     C           XKPROD    DOUNEAPROD
+     C           *IN99     OREQ *ON
+     C                     READ HSLTRACB                 99
+     C           *IN99     IFEQ *OFF
+      *
+      * Exit if product code or series code does not match.
+     C           XKPROD    IFNE APROD
+     C           XKSERC    ORNE ASERC
+     C                     LEAVE
+     C                     ENDIF
+      *
+      * Update vouchers in the serial number range.
+     C           XKSERF    IFLE ASERN
+     C           XKSERT    ANDGEASERN
+BL   C           YMODE     IFEQ 'D'
+BL   C                     MOVELXJCUST    ACUST
+BL   C                     Z-ADD0         ADSPB
+BL   C                     ELSE
+      *
+     C                     Z-ADDXJSORD    ASORD
+     C                     Z-ADDWKORDD    ADFIS
+     C                     UPDATHSFTRAC
+BL   C                     ENDIF
+     C                     ENDIF
+     C                     ENDIF
+     C                     ENDDO
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Update inventory allocations.
+      *----------------------------------------------------------------
+     C           UPINVA    BEGSR
+      *
+      * Update stock quantities.
+     C           IVMKEY    CHAINHSLINVMA             99
+     C           *IN99     IFEQ *OFF
+      *
+      * Increase allocated quantity and reduce available quantity.
+     C                     ADD  XKQTYN    DQTYR
+     C                     SUB  XKQTYN    DQTYF
+     C                     UPDATHSFINVM
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Update inventory sales.
+      *----------------------------------------------------------------
+BL   C           UPINVS    BEGSR
+BL    *
+BL    * Update stock quantities.
+BL   C           IVMKEY    CHAINHSLINVMA             99
+BL   C           *IN99     IFEQ *OFF
+BL    *
+BL    * Reduce allocated quantity and reduce on-hand quantity.
+BL   C                     SUB  XKQTYN    DQTYR
+BL   C                     SUB  XKQTYN    DQTYO
+BL   C                     UPDATHSFINVM
+BL   C                     ENDIF
+BL   C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Print delivery note.
+      *----------------------------------------------------------------
+     C           PRTDEL    BEGSR
+BL   C                     MOVELXJSORD    ORDPRM
+BL   C                     CALL 'HSR230'
+BL   C                     PARM           ORDPRM
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Print invoice.
+      *----------------------------------------------------------------
+     C           PRTINV    BEGSR
+BL   C                     MOVELXJSORD    ORDPRM
+BL   C                     CALL 'HSR220'
+BL   C                     PARM           ORDPRM
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Create order details.
+      *----------------------------------------------------------------
+     C           UPORDD    BEGSR
+      *
+      * Order line already exists
+     C                     MOVEL' '       UPDAT
+     C           XOLIN     IFGT 0
+     C           KEYOLN    CHAINHSLORDDB             98
+     C                     Z-ADDXOLIN     KLINE
+     C                     ENDIF
+      *
+      * Write fields for order detail record.
+     C                     MOVELXSELC     KLTYP
+     C                     MOVELXJCOMP    KCOMP
+     C                     MOVELXJTYPE    KTYPE
+     C                     Z-ADDXJSORD    KSORD
+     C                     Z-ADDRRNX      KLINE
+     C                     MOVELXJCUST    KCUST
+     C                     MOVELXKPROD    KPROD
+     C                     MOVELXKSERC    KSERC
+     C                     Z-ADDXKSERF    KSERNF
+     C                     Z-ADD0         KELEMF
+     C                     Z-ADDXKSERT    KSERNT
+     C                     Z-ADD0         KELEMT
+     C                     Z-ADDXKQTYN    KQTYN
+     C                     Z-ADDNCOST     KCOST
+     C                     Z-ADDXKPRIC    KPRIC
+     C                     Z-ADDXKVALU    KVALU
+      *
+BL    * Obtain VAT% from Order Type record.
+BL   C*          £KVALU    MULT .175      KVATA
+BL   C*          £KVALU    MULT MVATP     KVATA
+BL   C*          KVATA     DIV  100       KVATA     H
+     C                     Z-ADDCYMD      KCRTD
+     C                     Z-ADDXXTME     KCRTT
+     C                     MOVELXNDESC    KDESC
+     C                     MOVELXJOBNO    KCRTS
+     C                     MOVELXUSRID    KCRTU
+     C                     MOVELXPGMID    KCRTP
+     C                     MOVEL*BLANK    KDELT
+      *
+      * Update order detail record.
+     C           XOLIN     IFGT 0
+     C           *IN98     IFEQ *OFF
+     C                     MOVEL'Y'       UPDAT
+     C                     UPDATHSFORDD
+     C                     ENDIF
+     C                     ELSE
+      *
+      * Write order detail record.
+     C                     WRITEHSFORDD
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Create order header.
+      *----------------------------------------------------------------
+     C           UPORDH    BEGSR
+      *
+      * Program mode - Maintenance, or Dispatch
+     C           YMODE     IFEQ 'M'
+     C           YMODE     OREQ 'D'
+      *
+      * Access order header record.
+     C           XJSORD    CHAINHSLORDHA             99
+     C                     ENDIF
+      *
+      * Write fields for order header record.
+     C                     MOVELXJCOMP    JCOMP
+     C                     MOVELXJCUST    JCUST
+     C                     MOVEL*BLANKS   JCUSB
+     C                     MOVELXJORDR    JORDR
+     C                     MOVELXJTYPE    JTYPE
+     C                     Z-ADDXJSORD    JSORD
+     C                     Z-ADDWKORDD    JORDD
+     C                     MOVEL*BLANKS   JINVN
+     C                     Z-ADD0         JINVD
+     C                     MOVEL*BLANKS   JDELN
+     C                     Z-ADD0         JDELD
+     C                     Z-ADDCYMD      JCRTD
+     C                     Z-ADDXXTME     JCRTT
+     C                     MOVELXJOBNO    JCRTS
+     C                     MOVELXUSRID    JCRTU
+     C                     MOVELXPGMID    JCRTP
+     C                     MOVEL*BLANK    JDELT
+      *
+      * Program mode - Entry
+     C           YMODE     IFEQ 'E'
+      *
+      * Write order header record.
+BL   C                     MOVEL'A'       JSTAT
+     C                     WRITEHSFORDH
+     C                     ENDIF
+      *
+      * Program mode - Maintenance, or Dispatch
+     C           YMODE     IFEQ 'M'
+     C           YMODE     OREQ 'D'
+BL   C           YMODE     IFEQ 'D'
+BL   C                     Z-ADD*DATE     JDELD
+BL   C                     MOVEL'D'       JSTAT
+BL   C                     ENDIF
+      *
+      * Update order header record.
+     C           *IN99     IFEQ *OFF
+     C                     UPDATHSFORDH
+     C                     ENDIF
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * Create order delivery details.
+     C           UPODEL    BEGSR
+      *
+      * Program mode - Maintenance, or Dispatch
+     C           YMODE     IFEQ 'M'
+     C           YMODE     OREQ 'D'
+      *
+     C           XJSORD    CHAINHSFODEL              99
+     C                     ENDIF
+      *
+      * Write fields for order delivery detail record.
+     C                     MOVELXJCOMP    VCOMP
+     C                     MOVELXJTYPE    VTYPE
+     C                     Z-ADDXJSORD    VSORD
+     C                     MOVELXVNAM1    VNAM1
+     C                     MOVELXVADR1    VADR1
+     C                     MOVELXVADR2    VADR2
+     C                     MOVELXVADR3    VADR3
+     C                     MOVELXVPCDE    VPCDE
+     C                     MOVELXVDIN1    VDIN1
+     C                     MOVELXVDIN2    VDIN2
+     C                     MOVELXVDIN3    VDIN3
+     C                     MOVEL*BLANKS   VDELT
+      *
+      * Program mode - Entry
+     C           YMODE     IFEQ 'E'
+      *
+      * Write order delivery details record.
+     C                     WRITEHSFODEL
+     C                     ENDIF
+      *
+      * Program mode - Maintenance, or Dispatch
+     C           YMODE     IFEQ 'M'
+     C           YMODE     OREQ 'D'
+      *
+      * Update order delivery details record.
+     C           *IN99     IFEQ *OFF
+     C                     UPDATHSFODEL
+     C                     ENDIF
+     C                     ENDIF
+      *
+     C                     ENDSR
+      *----------------------------------------------------------------
+      * Create inventory sales transaction.
+      *----------------------------------------------------------------
+     C           UPINVT    BEGSR
+      *
+      * Write fields for inventory sales transaction record.
+     C                     MOVELXJCOMP    CCOMP
+     C                     MOVELXJWHSE    CWHSE
+     C                     MOVELXKPROD    CPROD
+     C                     MOVEL*BLANKS   CSUBCF
+     C                     MOVEL*BLANKS   CSUBCT
+     C                     MOVEL*BLANKS   CVTYP
+     C                     MOVELXKSERC    CSERC
+     C                     Z-ADDXKSERF    CSERNF
+     C                     Z-ADD0         CELEMF
+     C                     Z-ADDXKSERT    CSERNT
+     C                     Z-ADD0         CELEMT
+     C                     Z-ADDXKQTYN    CQTYN
+     C                     Z-ADD0         CBATC
+BL   C                     MOVELXJSORD    CDELN     P
+     C                     MOVEL*BLANKS   CREAS
+     C                     Z-ADDCYMD      CTDAT
+BL   C                     MOVELMTTYP     CTYPE
+     C                     MOVEL*BLANKS   CSUPP
+     C                     MOVELXJCUST    CCUST
+     C                     MOVEL*BLANKS   CAREA
+     C                     MOVEL*BLANKS   CAISL
+     C                     MOVEL*BLANKS   CBAYR
+     C                     MOVEL*BLANKS   CLEVL
+     C                     MOVEL*BLANKS   CINVN
+     C                     Z-ADDCYMD      CCRTD
+     C                     Z-ADDXXTME     CCRTT
+     C                     MOVELXJOBNO    CCRTS
+     C                     MOVELXUSRID    CCRTU
+     C                     MOVELXPGMID    CCRTP
+     C                     MOVEL*BLANK    CDELT
+      *
+      * Write inventory sales transaction record.
+     C                     WRITEHSFINVT
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * VALIDH - Validate header screen.
+      *----------------------------------------------------------------
+      *
+     C           VALIDH    BEGSR
+      *
+      * Screen Header validation:
+      *
+      * Reset work values.
+     C                     RESETXERROR
+     C                     MOVE *OFF      *IN61            Hide F10/F11
+      *
+      * Reset error indicators.
+     C                     MOVEAXZEROS    *IN,30
+      *
+      * Validate that Order Type is a valid Type.
+     C           XJTYPE    CHAINHSLORDPA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN30
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2001' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * Validate that Company is valid.
+     C           XJCOMP    IFNE *BLANKS
+     C           XJCOMP    CHAINHSLCOMPA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN31
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2002' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * Validate that Warehouse is valid.
+     C           XJWHSE    IFNE *BLANKS
+     C           XJWHSE    CHAINHSLWHSEA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN32
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV0006' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * Validate Post Code
+XXX  C           XJCUST    IFEQ *BLANKS
+     C           XJPCDE    IFNE *BLANKS
+     C           XJPCDE    CHAINHSLCUSTB             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN33
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2003' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * If Customer is found
+     C           *IN99     IFEQ *OFF
+      * ...load Customer record into screen fields.
+XXXM C                     MOVELENAM1     XJNAM1           Name 1
+XXXM C                     MOVELENAM2     XJNAM2           Name 2
+XXXM C                     MOVELEADR1     XJADR1           Address 1
+XXXM C                     MOVELEADR2     XJADR2           Address 2
+XXXM C                     MOVE ECUST     XJCUST           Cust No.
+XXX  C                     MOVE ECLIM     XJCLIM 150       Credit Limit
+XXX  C                     MOVE ETYSL     XJTYSL 205       Last Year Sales
+XXX  C                     ENDIF
+      *
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * Validate Customer Number
+XXXD C*          £JCUST    IFNE *BLANKS
+     C           XJCUST    CHAINHSLCUSTA             99
+     C           *IN99     IFEQ *ON
+     C                     MOVE *ON       *IN34
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2004' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * If Customer is found
+     C           *IN99     IFEQ *OFF
+      * ...load Customer record into screen fields.
+XXXM C                     MOVELENAM1     XJNAM1           Name 1
+XXXM C                     MOVELENAM2     XJNAM2           Name 2
+XXXM C                     MOVELEADR1     XJADR1           Address 1
+XXXM C                     MOVELEADR2     XJADR2           Address 2
+XXXM C                     MOVE EPCDE     XJPCDE           Post Code
+XXX  C                     MOVE ECLIM     XJCLIM 150       Credit Limit
+XXX  C                     MOVE ETYSL     XJTYSL 205       Last Year Sales
+XXX   *
+XXX   * Check customer's credit rating allows order entry......
+XXX  C           ECRAT     IFEQ '01 '
+XXX  C                     MOVE *ON       *IN34
+XXX  C                     MOVE XYES      XERROR
+XXX  C                     MOVEL'HSV2018' P0MSID
+XXX  C                     EXSR YSNDMG
+XXX  C                     ENDIF
+      *
+     C                     ENDIF
+XXXD C*                    ENDIF
+      *
+      * Maximum discount is 40%
+     C           XJDISP    IFGT 40
+     C                     MOVE *ON       *IN36
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV0142' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * Check order date
+     C           XJORDD    IFEQ 0
+     C                     EXSR YDATEC
+     C                     ELSE
+      *
+      * a) Check for leap year and adjust number of days in February
+      *    in Days in Month array.
+     C           JYY       DIV  4         REM     40
+     C           REM       IFEQ 0
+     C                     MOVEL'Y'       LEAP    1
+     C                     ELSE
+     C                     MOVEL' '       LEAP
+     C                     ENDIF
+     C                     SELEC
+     C           LEAP      WHEQ ' '
+     C                     MOVEA28        DIM,2
+     C           LEAP      WHEQ 'Y'
+     C                     MOVEA29        DIM,2
+     C                     ENDSL
+      * Day
+     C           JDD       IFGT 31
+     C           JDD       ORLT 01
+      * Month
+     C           JMM       ORGT 12
+     C           JMM       ORLT 01
+      *
+      * If date error found...
+     C                     MOVE *ON       *IN35
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2005' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+      *
+      * Validate Day within month.
+     C                     Z-ADDJMM       M       20
+     C           JDD       IFLT 1
+     C           JMM       ORGE 1
+     C           JMM       ANDLE12
+     C           JDD       ANDGTDIM,M
+      *
+      * If date error found...
+     C                     MOVE *ON       *IN35
+     C                     MOVE XYES      XERROR
+     C                     MOVEL'HSV2005' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF
+     C                     ENDIF
+      *
+      * If no errors found...
+     C           XERROR    IFEQ XNO
+      * ...display "Data valid.Press F10 to update" message...
+     C                     MOVEL'HSV9006' P0MSID
+     C                     EXSR YSNDMG
+      * ...activate F10 key (*IN61=*ON).
+     C                     MOVE *ON       *IN61
+     C                     ENDIF
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * ‡DATEC - Date Check Routine
+      *----------------------------------------------------------------
+      *
+     C           YDATEC    BEGSR
+      *
+      * Convert six-digit system date to eight digits, with century.
+     C                     MOVELUDAY      DD
+     C                     MOVELUMONTH    MM
+     C                     MOVELUYEAR     YY
+     C           YY        IFGT 80
+     C                     Z-ADD19        CC
+     C                     ELSE
+     C                     Z-ADD20        CC
+     C                     ENDIF
+     C                     MOVELCC        CCYY    40
+     C                     MOVE YY        CCYY
+      *
+      * Set default date for order entry.
+     C           XJORDD    IFEQ 0
+     C                     Z-ADDDMCY      XJORDD
+     C                     ENDIF
+      *
+      * Set date for transaction audit field.
+     C                     Z-ADDDD        DDD
+     C                     Z-ADDMM        MMM
+     C                     Z-ADDCC        CCC
+     C                     Z-ADDYY        YYY
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * ‡SERCH - F4 prompt control.
+      *----------------------------------------------------------------
+      *
+     C           YSERCH    BEGSR
+      *
+      * Check that cursor is in a valid field for prompting.
+     C           CSRRCD    IFEQ 'HSS200A'
+     C           CSRFLD    ANDEQ'XJCUST'
+     C           CSRRCD    OREQ 'HSS200A'
+     C           CSRFLD    ANDEQ'XJTYPE'
+     C           CSRRCD    OREQ 'HSS200A'
+     C           CSRFLD    ANDEQ'XJCOMP'
+     C           CSRRCD    OREQ 'HSS200A'
+     C           CSRFLD    ANDEQ'XJWHSE'
+     C           CSRRCD    OREQ 'HSS200A'
+     C           CSRFLD    ANDEQ'XJPCDE'
+     C           CSRRCD    OREQ 'HSS200C'
+     C           CSRFLD    ANDEQ'XKPROD'
+      *
+      * Move appropriate data to parameter fields depending upon search
+      * field chosen.
+     C                     SELEC
+      *
+      * Customer No.
+     C           CSRFLD    WHEQ 'XJCUST'
+     C                     MOVEL'HSLCUSTA'FILEY     P
+     C                     MOVEL'ENAM1'   NAMEY     P
+     C                     MOVEL'ECUST'   NUMBRY    P
+      *
+      * Post Code
+     C           CSRFLD    WHEQ 'XJPCDE'
+     C                     MOVEL'HSLCUSTB'FILEY     P
+     C                     MOVEL'ENAM1'   NAMEY     P
+     C                     MOVEL'EPCDE'   NUMBRY    P
+      *
+      * Order Type.
+     C           CSRFLD    WHEQ 'XJTYPE'
+     C                     MOVEL'HSLORDPA'FILEY     P
+     C                     MOVEL'MODES'   NAMEY     P
+     C                     MOVEL'MOTYP'   NUMBRY    P
+      *
+      * Company Code
+     C           CSRFLD    WHEQ 'XJCOMP'
+     C                     MOVEL'HSLCOMPA'FILEY     P
+     C                     MOVEL'WODES'   NAMEY     P
+     C                     MOVEL'WCOMP'   NUMBRY    P
+      *
+      * Warehouse Code
+     C           CSRFLD    WHEQ 'XJWHSE'
+     C                     MOVEL'HSLWHSEA'FILEY     P
+     C                     MOVEL'PODES'   NAMEY     P
+     C                     MOVEL'PWHSE'   NUMBRY    P
+      *
+      * Product Code
+     C           CSRFLD    WHEQ 'XKPROD'
+     C                     MOVEL'HSLPRODA'FILEY     P
+     C                     MOVEL'NDESC'   NAMEY     P
+     C                     MOVEL'NPROD'   NUMBRY    P
+      *
+     C                     ENDSL
+      *
+      * Call system window program to retrieve data.  If Return Code is
+      * *OFF then load retrieved data into screen fields.
+     C                     Z-ADD10        LINY
+     C                     Z-ADD8         COLY
+     C                     CALL 'HSR341'  PL341
+      *
+      * If Return Code is *OFF then load retrieved data into
+      * appropriate screen fields.
+     C           YRTNC     IFEQ *OFF                       ..If2
+      *
+     C                     SELEC
+      *
+      * Customer No.
+     C           CSRFLD    WHEQ 'XJCUST'
+     C                     MOVELYNUMBR    XJCUST    P
+      *
+      * Post Code
+     C           CSRFLD    WHEQ 'XJPCDE'
+     C                     MOVELYNUMBR    XJPCDE    P
+      *
+      * Customer Type.
+     C           CSRFLD    WHEQ 'XJTYPE'
+     C                     MOVELYNUMBR    XJTYPE    P
+      *
+      * Company Code
+     C           CSRFLD    WHEQ 'XJCOMP'
+     C                     MOVELYNUMBR    XJCOMP    P
+      *
+      * Warehouse Code
+     C           CSRFLD    WHEQ 'XJWHSE'
+     C                     MOVELYNUMBR    XJWHSE    P
+      *
+      * Product Code
+     C           CSRFLD    WHEQ 'XKPROD'
+     C                     MOVELYNUMBR    XKPROD    P
+      *
+     C                     ENDSL
+     C                     ENDIF                           ..EndIf2
+      *
+      * otherwise cursor is in wrong format/field so display message.
+     C                     ELSE                            .ElseIf1
+     C                     MOVEL'HSV9009' P0MSID
+     C                     EXSR YSNDMG
+     C                     ENDIF                           .EndIf1
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * ‡SERSF - F4 prompt control for order detail subfile.
+      *----------------------------------------------------------------
+      *
+     C           YSERSF    BEGSR
+      * Clear row / column control.
+     C                     Z-ADD0         CSRROW
+     C                     Z-ADD0         CSRCOL
+      *
+      * Retrieve the current cursor position.
+     C           CSRLOC    DIV  256       ROW     20
+     C                     MVR            COL     20
+     C                     Z-ADDROW       CSRROW
+     C                     Z-ADDCOL       CSRCOL
+      *
+      * Execute search.
+     C                     EXSR YSERCH
+      *
+      * Flag subfile record to return value.
+     C           CSRRRN    CHAINHSS200C              99
+     C           *IN99     IFEQ *OFF
+     C                     MOVEL*ON       *IN37
+XXX  C           YNUMBR    IFNE *BLANKS
+     C                     MOVELYNUMBR    XKPROD    P
+XXX  C                     ENDIF
+     C                     UPDATHSS200C
+     C                     MOVEL*OFF      *IN37
+     C                     ENDIF
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * ‡SNDMG - Send message to this program's MSGQ.
+      *----------------------------------------------------------------
+      *
+     C           YSNDMG    BEGSR
+      *
+     C                     CALL 'SNDMSGC'
+     C                     PARM           P0PGMQ           Program queue
+     C                     PARM           P0PGRL           Rel queue
+     C                     PARM           P0MSID           Message ID
+     C                     PARM           P0MSGF           Message file
+     C                     PARM           P0MSDA           Message data
+     C                     PARM           P0MSTP           Message type
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * ‡CLRMG - Clear message(s) from this program's MSGQ.
+      *----------------------------------------------------------------
+      *
+     C           YCLRMG    BEGSR
+      *
+     C                     CALL 'RMVMSGC'
+      *
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * *UPPVCT- Update the voucher control
+      *----------------------------------------------------------------
+      *
+     C           UPPVCT    BEGSR
+     C                     Z-ADD1         RRNQ
+     C           RRNQ      CHAINHSS200C              97
+     C           *IN97     DOWEQ*OFF
+      *
+     C                     ADD  1         RRNQ
+     C           XSELC     IFNE *BLANK
+     C           XKPROD    ORNE *BLANK
+     C           XNDESC    ORNE *BLANK
+     C           XKPRIC    ORNE *ZEROS
+     C           XKQTYN    ORNE *ZEROS
+     C           XKVALU    ORNE *ZEROS
+     C           XKVATA    ORNE *ZEROS
+     C           XKSERC    ORNE *BLANKS
+     C           XKSERF    ORNE *ZEROS
+     C           XKSERT    ORNE *ZEROS
+     C                     MOVE XKSERC    WKSERC
+     C                     MOVE XKSERT    TEMP    90
+     C                     ADD  1         TEMP
+     C           VCHKEY    SETLLHSLVCTLA
+     C           XKPROD    READEHSLVCTLA                 92
+     C                     MOVE TEMP      BSERNN
+     C                     UPDATHSFVCTL
+     C                     ENDIF
+      *
+     C           RRNQ      IFEQ 100
+     C                     LEAVE
+     C                     ENDIF
+     C           RRNQ      CHAINHSS200C              97
+     C                     ENDDO
+     C                     ENDSR
+      *
+      *----------------------------------------------------------------
+      * *INZSR - Initialization.
+      *----------------------------------------------------------------
+      *
+     C           *INZSR    BEGSR
+BL    *
+BL    * Dummy read to open file.
+BL   C                     READ HSPINVT                  99
+BL   C                     UPDATHSFINVT
+     C                     OPEN HSLEXPAA
+BL   C                     READ HSLEXPAA                 99
+     C                     CLOSEHSLEXPAA
+      *
+      * Key lists.
+      * Key List for Voucher Control.
+     C           VCHKEY    KLIST
+     C                     KFLD           XKPROD
+     C                     KFLD           WKSERC
+      *
+      * Key List for Voucher Cross-Reference.
+     C           KEYXRF    KLIST
+     C                     KFLD           CCYY
+     C                     KFLD           XJCUST
+     C                     KFLD           XKPROD
+      *
+      * Key List for Sales Order.
+     C           KEYOLN    KLIST
+     C                     KFLD           XJSORD
+     C                     KFLD           XOLIN
+      *
+      * Key List for Inventory Masterfile.
+     C           IVMKEY    KLIST
+     C                     KFLD           XKPROD
+     C                     KFLD           WKSUBC
+     C                     MOVE *BLANKS   WKSUBC
+      *
+      * Key List for Voucher Tracking.
+     C           TRCKEY    KLIST
+     C                     KFLD           XKPROD
+     C                     KFLD           XKSERC
+     C                     KFLD           XKSERF
+      *
+      * Key List for Customer Discount File.
+     C           DSCKEY    KLIST
+     C                     KFLD           ECTYP
+     C                     KFLD           PFAMT
+      *
+      * Parameter Lists.
+      * Entry parameter list.
+     C           *ENTRY    PLIST
+     C                     PARM           YMODE   1        Mode
+     C                     PARM           YORDNO  8        Sales Order No.
+     C                     PARM           YTYPE   3        Order Type
+     C                     PARM           YCUST   8        Customer No.
+      *
+      * List for Call to HSR341 - Search program.
+     C           PL341     PLIST
+     C                     PARM           YRTNC   1
+     C                     PARM           YNUMBR 15
+     C                     PARM           FILEY  10
+     C                     PARM           NAMEY   6
+     C                     PARM           NUMBRY  6
+     C                     PARM           LINY    30
+     C                     PARM           COLY    30
+      *
+      * Field definitions
+     C           *LIKE     DEFN XKVALU    WKTOTV
+     C           *LIKE     DEFN XKSERC    WKSERC
+     C           *LIKE     DEFN BSERNN    WKSERN
+     C           *LIKE     DEFN XKQTYN    WKQTYN
+     C           *LIKE     DEFN DSUBC     WKSUBC
+     C           *LIKE     DEFN XNO       WKRANG
+     C           *LIKE     DEFN XNO       WKVCTL
+     C           *LIKE     DEFN XNO       UPDAT
+      *
+      * Variable declarations.
+     C                     MOVE '0'       XNO     1
+     C                     MOVE '1'       XYES    1
+     C                     MOVE XNO       XERROR  1
+     C                     MOVE XNO       XUPDAT  1
+     C                     MOVE XNO       XDELET  1
+BL   C                     MOVEL*BLANKS   ORDPRM  8
+     C                     Z-ADD1         RCDNBR
+     C                     Z-ADD0         RRNX    50
+     C                     Z-ADD0         RRNVAL  50
+     C                     Z-ADD0         RRNLIN  50
+     C                     Z-ADD0         RRNQ    50
+     C                     Z-ADD0         RRNP    50
+      *
+      * Prepare message subfile.
+     C                     MOVE *ON       *IN79
+     C                     MOVE XPGMID    P0PGMQ 10        Program queu
+     C                     MOVEL'*PRV'    P0PGRL  5        Rel queue
+     C                     MOVE *BLANKS   P0MSID  7        Message ID
+     C                     MOVEL'HSM001'  P0MSGF 10        Message file
+     C                     MOVE *BLANKS   P0MSDA132        Message data
+     C                     MOVEL'*INFO'   P0MSTP  7        Message type
+      *
+     C                     EXSR YDATEC
+      *
+     C                     ENDSR
+** Days in Month array DIM.
+312831303130313130313031

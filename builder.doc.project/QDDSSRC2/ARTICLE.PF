@@ -1,0 +1,6 @@
+                                            REF(SMPREF)
+                R FARTI
+                  ARTIID    R
+                  ARTIDE    R
+                  ARTISP    R               REFFLD(ARTIPR)
+                  ARTIFA    R               REFFLD(FAMIID)

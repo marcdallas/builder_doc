@@ -1,0 +1,30 @@
+      *%CSTD===========================================================*
+      ** Application. : MMO_HUB    HUB Standard App                    *
+      ** Component. . : HSLORDPA                      Type: LF         *
+      **===============================================================*
+      ** Sub-system . : TRD Trade                                      *
+      ** Function . . :                                                *
+      ** Sub-function :                                                *
+      **%S=============================================================*
+      ** Description of functions:                                     *
+      **                                                               *
+      **                                                               *
+      **                                                               *
+      **%E=============================================================*
+      ** AUTHOR:                          00:00                        *
+      ** MODIFS: 01 MICHEL     07/31/2014 01:52  V 1.00.D WI       85  *
+      **           Demo Work item (from RTC) for VIP                   *
+      *%ECSTD==========================================================*
+      **************************************************************
+      *                                                            *
+      *  File Name  :  HSLORDPA                                    *
+      *                                                            *
+      *  Description:  Sales Parameter by Order type               *
+      *                                                            *
+      *  Date       :  January 1999                                *
+      *                                                            *
+      **************************************************************
+     A                                      UNIQUE
+     A          R HSFORDP                   PFILE(HSPORDP)
+      *
+     A          K MOTYP

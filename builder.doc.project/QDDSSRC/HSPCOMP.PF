@@ -1,0 +1,19 @@
+      **************************************************************
+      *                                                            *
+      *  File Name  :  HSPCOMP                                     *
+      *                                                            *
+      *  Description:  Company Codes                               *
+      *                                                            *
+      *  Date       :  December 1998                               *
+      *                                                            *
+      **************************************************************
+     A                                      REF(*LIBL/HSPREF)
+     A          R HSFCOMP
+      *  Description:  Company Codes
+     A            WCOMP     R               REFFLD(COMP)
+     A            WODES     R               REFFLD(DESC)
+     A                                      COLHDG('Company Text')
+     A            WDELT     R               REFFLD(A1)
+     A                                      COLHDG('Deletion flag')
+     A            WCTYCD    R               COLHDG('Country')
+     A                                      REFFLD(A1)
